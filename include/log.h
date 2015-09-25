@@ -1,3 +1,4 @@
+
 #ifndef IRIS_LOG_H_
 #define IRIS_LOG_H_
 
@@ -8,6 +9,8 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include <string>
+#include <utility>
 
 #include "define.h"
 #include "writer.h"
@@ -15,11 +18,55 @@
 
 namespace iris {
 
-typedef std::shared_ptr<std::vector<char>> sp_loglet_t;
-struct thread_logqueue;
-extern thread_local std::unique_ptr<thread_logqueue> this_thread_logqueue;
-extern thread_local level log_level;
 
+
+
+enum data_type{
+    TYPE_BOOL = 0,
+    TYPE_UCHAR = 1,
+    TYPE_CHAR = 2,
+    TYPE_USHORT = 3,
+    TYPE_SHORT = 4,
+    TYPE_UINT  = 5,
+    TYPE_INT   = 6,
+    TYPE_ULONG = 7,
+    TYPE_LONG = 8,
+    TYPE_ULLONG = 9,
+    TYPE_LLONG = 10,
+    TYPE_FLOAT = 11,
+    TYPE_DOUBLE = 12,
+    TYPE_LONGDOUBLE = 13,
+    TYPE_VOIDADDR = 14,
+    TYPE_CHARADDR = 15,
+    TYPE_STRING  = 16
+};
+
+struct data {
+    enum data_type type;
+    union {
+        void *          addr;
+        bool            b;
+        char            c;
+        short           s;
+        int             i;
+        long int        l;
+        long long int   ll;
+        float           f;
+        double          d;
+        long double     ld;
+    };
+    std::string     str;
+};
+
+struct loglet_t {
+    const char *                            fmt;
+    std::vector<data>                       args;  
+};
+
+typedef std::shared_ptr<loglet_t> sp_loglet_t;
+struct thread_logqueue;
+extern std::unique_ptr<thread_logqueue> this_thread_logqueue;
+extern level log_level;
 
 struct thread_logqueue {
     thread_logqueue();                      // used only by normal threads
@@ -30,7 +77,6 @@ struct thread_logqueue {
     thread_logqueue * head;
     bool logging_thread;                 // if current thread is the logging thread
 };
-
 
 
 class logger {
@@ -49,25 +95,11 @@ public:
         if (iris_unlikely(!this_thread_logqueue.get())) {
             this_thread_logqueue = std::unique_ptr<thread_logqueue>(new thread_logqueue(&m_head));
         }
-
-        sp_loglet_t sl(new std::vector<char>(128));
-        std::vector<char> & msg = *sl;
-        int final_n, n = 128;
-        va_list ap; 
-
-        while (true) {
-            final_n = snprintf(&msg[0], msg.size(), fmt, args...);
-
-            if (final_n < 0 || final_n >= n)
-                n += std::abs(final_n - n + 1.0); 
-            else
-                break;
-            msg.resize(n);
-        }
-
-        msg.resize(final_n);
-        msg.push_back('\n');s
-
+        //printf(fmt, args...);
+        //printf("\n");
+        sp_loglet_t sl(new loglet_t);
+        sl->fmt = fmt;
+        append(sl, args...);
         while(!this_thread_logqueue->q.offer(sl))
             std::this_thread::yield();
     }
@@ -111,6 +143,167 @@ public:
 
     ~logger() {
         sync_and_close();
+    }
+private:
+    template<typename... Arg>
+    void append(sp_loglet_t &sl) {}
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, bool arg, Args... args) {
+        struct data d;
+        d.type = TYPE_BOOL;
+        d.c = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned char arg, Args... args) {
+        struct data d;
+        d.type = TYPE_UCHAR;
+        d.c = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, char arg, Args... args) {
+        struct data d;
+        d.type = TYPE_CHAR;
+        d.c = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned short arg, Args... args) {
+        struct data d;
+        d.type = TYPE_USHORT;
+        d.s = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, short arg, Args... args) {
+        struct data d;
+        d.type = TYPE_SHORT;
+        d.s = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned int arg, Args... args) {
+        struct data d;
+        d.type = TYPE_UINT;
+        d.i = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, int arg, Args... args) {
+        struct data d;
+        d.type = TYPE_INT;
+        d.i = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned long arg, Args... args) {
+        struct data d;
+        d.type = TYPE_ULONG;
+        d.l = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, long arg, Args... args) {
+        struct data d;
+        d.type = TYPE_LONG;
+        d.l = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned long long arg, Args... args) {
+        struct data d;
+        d.type = TYPE_ULLONG;
+        d.ll = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, long long arg, Args... args) {
+        struct data d;
+        d.type = TYPE_LLONG;
+        d.ll = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, float arg, Args... args) {
+        struct data d;
+        d.type = TYPE_FLOAT;
+        d.f = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, double arg, Args... args) {
+        struct data d;
+        d.type = TYPE_DOUBLE;
+        d.d = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, long double arg, Args... args) {
+        struct data d;
+        d.type = TYPE_LONGDOUBLE;
+        d.ld = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, unsigned char * arg, Args... args) {
+        append(sl, (char *)arg, args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, char * arg, Args... args) {
+        struct data d;
+        d.type = TYPE_CHARADDR;
+        d.addr = arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename T, typename... Args>
+    void append(sp_loglet_t & sl, T * arg, Args... args) {
+        struct data d;
+        d.type = TYPE_VOIDADDR;
+        d.addr = (void*)arg;
+        sl->args.push_back(std::move(d));
+        append(sl,args...);
+    }
+
+    template<typename... Args>
+    void append(sp_loglet_t & sl, const std::string & arg, Args... args) {
+        struct data d;
+        d.str = arg;
+        sl->args.push_back(std::move(d));
+        sl->args.back().type = TYPE_STRING;
+        append(sl,args...);
     }
 private:
     std::atomic<bool> m_stop;
