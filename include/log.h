@@ -18,52 +18,8 @@
 
 namespace iris {
 
-
-
-
-enum data_type{
-    TYPE_BOOL = 0,
-    TYPE_UCHAR = 1,
-    TYPE_CHAR = 2,
-    TYPE_USHORT = 3,
-    TYPE_SHORT = 4,
-    TYPE_UINT  = 5,
-    TYPE_INT   = 6,
-    TYPE_ULONG = 7,
-    TYPE_LONG = 8,
-    TYPE_ULLONG = 9,
-    TYPE_LLONG = 10,
-    TYPE_FLOAT = 11,
-    TYPE_DOUBLE = 12,
-    TYPE_LONGDOUBLE = 13,
-    TYPE_VOIDADDR = 14,
-    TYPE_CHARADDR = 15,
-    TYPE_STRING  = 16
-};
-
-struct data {
-    enum data_type type;
-    union {
-        void *          addr;
-        bool            b;
-        char            c;
-        short           s;
-        int             i;
-        long int        l;
-        long long int   ll;
-        float           f;
-        double          d;
-        long double     ld;
-    };
-    std::string     str;
-};
-
-struct loglet_t {
-    const char *                            fmt;
-    std::vector<data>                       args;  
-};
-
 typedef std::shared_ptr<loglet_t> sp_loglet_t;
+typedef void formatter_t(loglet_t * l, buffer & obuf);
 struct thread_logqueue;
 extern std::unique_ptr<thread_logqueue> this_thread_logqueue;
 extern level log_level;
@@ -72,12 +28,51 @@ struct thread_logqueue {
     thread_logqueue();                      // used only by normal threads
     thread_logqueue(thread_logqueue *head); // used only by logging thread
     ~thread_logqueue();
-    sslfqueue<sp_loglet_t, 5000> q;
+    sslfqueue<loglet_t*, 5000> q;
     std::atomic<thread_logqueue *> next;
     thread_logqueue * head;
     bool logging_thread;                 // if current thread is the logging thread
 };
 
+
+template<size_t ...> struct seq {};
+template<size_t idx, std::size_t N, std::size_t... S> struct seq_helper: seq_helper<idx + 1, N, S..., idx> {};
+template<size_t N, size_t ...S> struct seq_helper<N, N, S...> {
+    typedef seq<S...> type;
+};
+template<size_t N>
+struct make_sequence {
+    typedef typename seq_helper<0, N>::type type;
+};
+
+template<typename...Args, std::size_t...Indexes>
+static int call_snprintf(buffer & obuf,const char * fmt, std::tuple<Args...> args, seq<Indexes...>) {
+    return std::snprintf(obuf.write_pointer(), obuf.freespace(), fmt, std::get<Indexes>(args)...);
+}
+template<typename... Args>
+static void formatter(loglet_t * l, buffer & obuf) {
+    size_t args_offset = sizeof(formatter_t*), n = obuf.size();
+    typedef std::tuple<Args...> Args_t;
+    Args_t & args = *reinterpret_cast<Args_t*>(l->buf.buf + args_offset);
+
+    obuf.expand(obuf.size() + strlen(l->fmt) + sizeof...(Args) * 5);
+    while (true) {
+        typename make_sequence<sizeof...(Args)>::type indexes;
+        n = call_snprintf(obuf, l->fmt, args, indexes);
+        if (n > obuf.freespace()) {
+            obuf.expand(obuf.size() + n + 2);
+        } else {
+            if (n > 0) {
+                obuf.pos += n;
+            }
+            break;
+        }
+    }
+
+    obuf[obuf.pos++] = '\n';
+    //deconstruct parameter pack
+    args.~Args_t();
+}
 
 class logger {
 public:
@@ -88,50 +83,55 @@ public:
     }
 
     template<typename... Args>
-    void log(level l, const char * fmt, Args... args) {
-        if (l < log_level)
+    void log(level lvl, const char * fmt, Args&&... args) {
+        if (lvl < log_level)
             return;
 
         if (iris_unlikely(!this_thread_logqueue.get())) {
             this_thread_logqueue = std::unique_ptr<thread_logqueue>(new thread_logqueue(&m_head));
         }
-        //printf(fmt, args...);
-        //printf("\n");
-        sp_loglet_t sl(new loglet_t);
-        sl->fmt = fmt;
-        append(sl, args...);
-        while(!this_thread_logqueue->q.offer(sl))
+        typedef std::tuple<typename std::decay<Args>::type...> Args_t;
+        size_t buffer_size = sizeof(formatter_t*) + sizeof(Args_t);
+        size_t args_offset = sizeof(formatter_t*);
+        loglet_t * l = new loglet_t(fmt, buffer_size);
+
+        *reinterpret_cast<formatter_t**>(l->buf.buf) = &formatter<typename std::decay<Args>::type...>;
+        //inplace construct parameter pack
+        new (l->buf.buf + args_offset) Args_t(std::forward<Args>(args)...);
+        l->buf.pos += buffer_size;
+
+        while(!this_thread_logqueue->q.offer(l))
             std::this_thread::yield();
     }
 
     template<typename... Args>
-    void trace(const char * fmt, Args... args) {
-        log(TRACE, fmt, args...);
+    void trace(const char * fmt, Args&&... args) {
+        log(TRACE, fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void debug(const char * fmt, Args... args) {
-        log(DEBUG, fmt, args...);
+    void debug(const char * fmt, Args&&... args) {
+        log(DEBUG, fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void info(const char * fmt, Args... args) {
-        log(INFO, fmt, args...);
+    void info(const char * fmt, Args&&... args) {
+        log(INFO, fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void warn(const char * fmt, Args... args) {
-        log(WARN, fmt, args...);
+    void warn(const char * fmt, Args&&... args) {
+        log(WARN, fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void error(const char * fmt, Args... args) {
-        log(ERROR, fmt, args...);
+    void error(const char * fmt, Args&&... args) {
+        log(ERROR, fmt, std::forward<Args>(args)...);
     }
 
     template<typename... Args>
-    void fatal(const char * fmt, Args... args) {
-        log(FATAL, fmt, args...);
+    void fatal(const char * fmt, Args&&... args) {
+        log(FATAL, fmt, std::forward<Args>(args)...);
     }
 
     void sync_and_close() {
@@ -143,167 +143,6 @@ public:
 
     ~logger() {
         sync_and_close();
-    }
-private:
-    template<typename... Arg>
-    void append(sp_loglet_t &sl) {}
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, bool arg, Args... args) {
-        struct data d;
-        d.type = TYPE_BOOL;
-        d.c = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned char arg, Args... args) {
-        struct data d;
-        d.type = TYPE_UCHAR;
-        d.c = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, char arg, Args... args) {
-        struct data d;
-        d.type = TYPE_CHAR;
-        d.c = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned short arg, Args... args) {
-        struct data d;
-        d.type = TYPE_USHORT;
-        d.s = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, short arg, Args... args) {
-        struct data d;
-        d.type = TYPE_SHORT;
-        d.s = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned int arg, Args... args) {
-        struct data d;
-        d.type = TYPE_UINT;
-        d.i = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, int arg, Args... args) {
-        struct data d;
-        d.type = TYPE_INT;
-        d.i = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned long arg, Args... args) {
-        struct data d;
-        d.type = TYPE_ULONG;
-        d.l = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, long arg, Args... args) {
-        struct data d;
-        d.type = TYPE_LONG;
-        d.l = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned long long arg, Args... args) {
-        struct data d;
-        d.type = TYPE_ULLONG;
-        d.ll = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, long long arg, Args... args) {
-        struct data d;
-        d.type = TYPE_LLONG;
-        d.ll = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, float arg, Args... args) {
-        struct data d;
-        d.type = TYPE_FLOAT;
-        d.f = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, double arg, Args... args) {
-        struct data d;
-        d.type = TYPE_DOUBLE;
-        d.d = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, long double arg, Args... args) {
-        struct data d;
-        d.type = TYPE_LONGDOUBLE;
-        d.ld = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, unsigned char * arg, Args... args) {
-        append(sl, (char *)arg, args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, char * arg, Args... args) {
-        struct data d;
-        d.type = TYPE_CHARADDR;
-        d.addr = arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename T, typename... Args>
-    void append(sp_loglet_t & sl, T * arg, Args... args) {
-        struct data d;
-        d.type = TYPE_VOIDADDR;
-        d.addr = (void*)arg;
-        sl->args.push_back(std::move(d));
-        append(sl,args...);
-    }
-
-    template<typename... Args>
-    void append(sp_loglet_t & sl, const std::string & arg, Args... args) {
-        struct data d;
-        d.str = arg;
-        sl->args.push_back(std::move(d));
-        sl->args.back().type = TYPE_STRING;
-        append(sl,args...);
     }
 private:
     std::atomic<bool> m_stop;

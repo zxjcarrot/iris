@@ -13,7 +13,7 @@ iris::logger g_log(iris::INFO, &writer);
 
 std::map<int, int> freq_map;
 //std::vector<int>   lats;
-#define ITERATIONS 10
+#define ITERATIONS 1e6
 int main(int argc, char const *argv[]) {
     long long max_lat = std::numeric_limits<long long>::lowest(), min_lat = std::numeric_limits<long long>::max(), avg_lat = 0, sum = 0;
     for (int i = 1; i <= ITERATIONS; ++i) {
@@ -33,6 +33,7 @@ int main(int argc, char const *argv[]) {
     for (auto kv : freq_map) {
         printf("%d,%d\n", kv.first, kv.second);
     }
+    g_log.sync_and_close();
     //printf("\nno,latency\n");
     //for (size_t i = 0; i < lats.size(); ++i) {
     //    printf("%zu,%d\n", i + 1, lats[i]);

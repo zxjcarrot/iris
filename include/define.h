@@ -1,6 +1,9 @@
 #ifndef IRIS_DEFINE_H_
 #define IRIS_DEFINE_H_
 #include <sys/uio.h>
+
+#include "buffer.h"
+
 namespace iris {
 
 #define iris_likely(x) __builtin_expect(!!(long)(x), 1)
@@ -13,6 +16,13 @@ enum level {
     WARN,
     ERROR,
     FATAL
+};
+
+struct loglet_t {
+    const char *                            fmt;
+    // @pbuffer holds formatter function address and arguments
+    buffer                                  buf;
+    loglet_t(const char * format_str, size_t buffer_size = 0):fmt(format_str), buf(buffer_size){}
 };
 
 #if defined(IOV_MAX) /* Linux x86 (glibc-2.3.6-3) */
