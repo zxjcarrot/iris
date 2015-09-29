@@ -6,22 +6,22 @@
 #include <log.h>
 #include <stream_writer.h>
 
-#include "format_extractor.h"
 using namespace iris;
 
 namespace iris{
 
 static stream_writer stdout_writer(stdout);
 
-std::unique_ptr<thread_logqueue> this_thread_logqueue; 
+thread_logqueue_holder this_thread_logqueue; 
+notifier ntfer;
 level log_level;
+long long last_timestamp;
 }
 
-thread_logqueue::thread_logqueue(): next(nullptr),logging_thread(true) 
+thread_logqueue::thread_logqueue(): next(nullptr),output_thread(true) 
     {}
 
-
-thread_logqueue::thread_logqueue(thread_logqueue *head): next(nullptr), head(head), logging_thread(false) {
+thread_logqueue::thread_logqueue(thread_logqueue *head): next(nullptr), head(head), output_thread(false) {
     thread_logqueue * p = nullptr;
 
     do {
@@ -36,7 +36,7 @@ thread_logqueue::thread_logqueue(thread_logqueue *head): next(nullptr), head(hea
 }
 
 thread_logqueue::~thread_logqueue() {
-    if (logging_thread)
+    if (output_thread)
         return;
     thread_logqueue * p = nullptr, *pnext = nullptr, *q = this;
 
@@ -70,11 +70,12 @@ static void clear_pointer_vector(std::vector<T*> & vec) {
     vec.clear();
 }
 
-static void iris_thread(writer * pwriter, std::atomic<bool> * stop, thread_logqueue * head) {
-    this_thread_logqueue.reset(new thread_logqueue(head));
+static void iris_thread(writer * pwriter, std::atomic<bool> * stop, thread_logqueue * head, size_t buffer_size) {
+    this_thread_logqueue.assign(new thread_logqueue(head));
     std::vector<loglet_t *> logs;
-    std::vector<struct iovec> iovecs;
     std::vector<buffer *> log_buffers;
+    std::vector<ntf_t>    ntfs;
+    buffer buf(buffer_size);
     while(!*stop) {
         // iterate through the linked list of input queues, collect log entries
         thread_logqueue * p = head;
@@ -85,34 +86,63 @@ static void iris_thread(writer * pwriter, std::atomic<bool> * stop, thread_logqu
         }
 
         if (logs.empty()) {
-            std::this_thread::yield();
-        } else {
-            iovecs.clear();
-            for (size_t i = 0; i < logs.size(); ++i)  {
-                if (iovecs.size() <= i) {
-                    struct iovec vec;
-                    iovecs.push_back(vec);
+            ntfs.clear();
+            // wait for notification or 100ms
+            ntfer.wait(100, ntfs);
+            for (size_t i = 0; i < ntfs.size(); ++i) {
+                ntf_t ntf = ntfs[i];
+                p = reinterpret_cast<thread_logqueue *>(notifier::to_data_t(ntf));
+                switch(notifier::to_ntf_type(ntf)) {
+                    case ntf_msg:
+                        p->q.batch_poll(logs);
+                    break;
+                    case ntf_queue_deletion:
+                        p->q.batch_poll(logs);
+                        delete p;
+                    break;
+                    default:
+                    break;
                 }
-                if (log_buffers.size() <= i) {
-                    log_buffers.push_back(new buffer());
-                }
-                buffer * pbuf = log_buffers[i];
-                auto f = *reinterpret_cast<formatter_t**>(logs[i]->buf.buf);
-                pbuf->reset();
-                (*f)(logs[i], *pbuf);
-                iovecs[i].iov_base = pbuf->buf;
-                iovecs[i].iov_len = pbuf->size();
             }
-
-            pwriter->write(iovecs);
+        }
+        for (size_t i = 0; i < logs.size(); ++i) {
+            auto f = *reinterpret_cast<formatter_t**>(logs[i]->buf.buf);
+            if ((*f)(logs[i], buf) == false) {
+                --i; // offset with ++i, redo the formatting again.
+                pwriter->write(buf, buf.size());
+                buf.reset();
+            }
+        }
+        if (buf.size()) {
+            pwriter->write(buf.buf, buf.size());
+            buf.reset();
         }
     }
-    clear_pointer_vector(log_buffers);
+
+    //collect one more time
+    thread_logqueue * p = head;
+    clear_pointer_vector(logs);
+    while (p) {
+        p->q.batch_poll(logs);
+        p = p->next;
+    }
+    for (size_t i = 0; i < logs.size(); ++i) {
+        auto f = *reinterpret_cast<formatter_t**>(logs[i]->buf.buf);
+        if ((*f)(logs[i], buf) == false) {
+            --i; // offset with ++i, redo the formatting again.
+            pwriter->write(buf.buf, buf.size());
+            buf.reset();
+        }
+    }
+    if (buf.size()) {
+        pwriter->write(buf.buf, buf.size());
+        buf.reset();
+    }
 }
 
-logger::logger(level l, writer * pwriter) : m_stop(false) {
+logger::logger(size_t notify_interval, size_t output_buffer_size, level l, writer * pwriter): m_notify_interval(notify_interval), m_stop(0) {
     if (pwriter == nullptr)
         pwriter = &stdout_writer;
-    m_logging_thread = std::thread(iris_thread, pwriter, &m_stop, &m_head);
+    m_output_thread = std::thread(iris_thread, pwriter, &m_stop, &m_head, output_buffer_size);
     log_level = l;
 }

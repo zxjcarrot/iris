@@ -9,10 +9,8 @@
 #include <file_writer.h>
 #include <map>
 iris::file_writer writer("./log.txt");
-iris::logger g_log(iris::INFO, &writer);
+iris::logger g_log(1000, 102400, iris::INFO, &writer);
 
-std::map<int, int> freq_map;
-//std::vector<int>   lats;
 #define ITERATIONS 1e6
 int main(int argc, char const *argv[]) {
     long long max_lat = std::numeric_limits<long long>::lowest(), min_lat = std::numeric_limits<long long>::max(), avg_lat = 0, sum = 0;
@@ -29,14 +27,11 @@ int main(int argc, char const *argv[]) {
         //lats.push_back(lat);
     }
     printf("max_lat: %lldns, min_lat: %lldns, avg_lat: %lldns, latency sum %lldns\n", max_lat, min_lat, avg_lat, sum);
-    printf("\nlatency,count\n");
-    for (auto kv : freq_map) {
-        printf("%d,%d\n", kv.first, kv.second);
-    }
     g_log.sync_and_close();
     //printf("\nno,latency\n");
     //for (size_t i = 0; i < lats.size(); ++i) {
     //    printf("%zu,%d\n", i + 1, lats[i]);
     //}
+    //sleep(10);
     return 0;
 }

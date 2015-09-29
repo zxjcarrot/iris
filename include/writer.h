@@ -10,7 +10,7 @@ namespace iris {
 class writer {
 public:
     virtual void write(const char * msg) = 0;
-    virtual void write(const struct iovec & vec) = 0;
+    virtual void write(const char * buffer, size_t len) = 0;
     virtual void write(const std::vector<struct iovec> & logs) = 0;
 };
 

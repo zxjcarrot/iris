@@ -14,23 +14,21 @@ stream_writer::stream_writer(FILE * stream): m_stream(stream), m_fd(-1) {
 
 void stream_writer::write(const char * msg) {
     size_t len = strlen(msg);
-redo:
-    size_t n = fwrite(msg, 1, len, m_stream);
-    if (iris_unlikely(len != n)) {
-        if (errno != EINTR)
-            goto redo;
-        fprintf(stderr, "[iris] should write %lu byts, only %lu bytes written, reason: %s.\n", len, n, strerror(errno));
-    }
-    fflush(m_stream);
+    this->write(msg, len);
 }
 
-void stream_writer::write(const struct iovec & vec) {
-redo:
-    size_t n = fwrite(vec.iov_base, 1, vec.iov_len, m_stream);
-    if (iris_unlikely(vec.iov_len != n)) {
-        if (errno != EINTR)
-            goto redo;
-        fprintf(stderr, "[iris] error, should write %lu byts, only %lu bytes written, reason: %s.\n", vec.iov_len, n, strerror(errno));
+void stream_writer::write(const char * buffer, size_t len){
+    size_t written = 0;
+    while (written < len) {
+        size_t n = fwrite(buffer + written, 1, len - written, m_stream);
+        written += n;
+        if (n < len) {
+            if (errno == EINTR) {
+                continue;
+            }
+            fprintf(stderr, "[iris] error, should write %lu byts, only %lu bytes written, reason: %s.\n", len, n, strerror(errno));
+            break;
+        }
     }
     fflush(m_stream);
 }

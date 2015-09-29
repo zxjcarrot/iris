@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <atomic>
 
+#include "utils.h"
+
 namespace iris {
 
 //a single producer single consumer lockfree ring queue.
@@ -21,16 +23,6 @@ private:
 	char                _pad6_[64 - sizeof(std::atomic<long>)];
 	long		        head_cache;
 	char                _pad7_[64 - sizeof(long)];
-
-	inline static int next_multiple_of_2(int n) {
-		int bits = 0;
-		while(n) {
-			++bits;
-			n >>= 1;
-		}
-
-		return 1 << bits;
-	}
 
 public:
 

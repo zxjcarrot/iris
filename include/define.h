@@ -17,14 +17,6 @@ enum level {
     ERROR,
     FATAL
 };
-
-struct loglet_t {
-    const char *                            fmt;
-    // @pbuffer holds formatter function address and arguments
-    buffer                                  buf;
-    loglet_t(const char * format_str, size_t buffer_size = 0):fmt(format_str), buf(buffer_size){}
-};
-
 #if defined(IOV_MAX) /* Linux x86 (glibc-2.3.6-3) */
     #define MAX_IOVECS IOV_MAX
 #elif defined(MAX_IOVEC) /* Linux ia64 (glibc-2.3.3-98.28) */

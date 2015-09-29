@@ -1,7 +1,7 @@
 #ifndef IRIS_BUFFER_H_
 #define IRIS_BUFFER_H_
+#include <string.h>
 #include <memory>
-
 namespace iris {
 
 struct buffer {
@@ -34,9 +34,9 @@ public:
     inline operator char*() {
         return buf;
     }
-    char      *buf;
-    size_t     pos;
-    size_t     capacity;
+    char       *buf;
+    int         pos;
+    int         capacity;
 };
 
 }

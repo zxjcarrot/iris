@@ -14,6 +14,7 @@ class file_writer: public stream_writer {
 public:
     file_writer(const char * filename);
     ~file_writer();
+    virtual void write(const char * buffer, size_t len);
 private:
     std::string m_filename;
 };
