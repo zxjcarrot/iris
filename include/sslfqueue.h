@@ -2,33 +2,33 @@
 #define IRIS_SSLFQUEUE_H_
 #include <stdint.h>
 #include <atomic>
-
+#include <vector>
 #include "utils.h"
 
 namespace iris {
 
 //a single producer single consumer lockfree ring queue.
-template<typename T, int CAP>
+template<typename T>
 class sslfqueue {
 private:
-	int                 cap;
-	int                 mask;
+	size_t              cap;
+	size_t              mask;
     T *                 buffer;
-	char                _pad3_[64 - sizeof(T*) - sizeof(int) * 2];
+	char                _pad0_[IRIS_CACHELINE_SIZE - sizeof(T*) - sizeof(int) * 2];
     std::atomic<long>   head;
-	char                _pad4_[64 - sizeof(std::atomic<long>)];
+	char                _pad1_[IRIS_CACHELINE_SIZE - sizeof(std::atomic<long>)];
 	long		        tail_cache;
-	char                _pad5_[64 - sizeof(long)];
+	char                _pad2_[IRIS_CACHELINE_SIZE - sizeof(long)];
     std::atomic<long>   tail;
-	char                _pad6_[64 - sizeof(std::atomic<long>)];
+	char                _pad3_[IRIS_CACHELINE_SIZE - sizeof(std::atomic<long>)];
 	long		        head_cache;
-	char                _pad7_[64 - sizeof(long)];
+	char                _pad4_[IRIS_CACHELINE_SIZE - sizeof(long)];
 
 public:
 
-    sslfqueue():head(0), tail_cache(0), tail(0), head_cache(0)
+    sslfqueue(size_t capacity = 5000):head(0), tail_cache(0), tail(0), head_cache(0)
     {
-    	cap = next_multiple_of_2(CAP);
+    	cap = round_up_to_next_multiple_of_2(capacity);
     	mask = cap - 1;
 		buffer = new T[cap];
 	}
@@ -76,7 +76,7 @@ public:
 
         while (cur_head < tail_cache) {
             vec.push_back(buffer[cur_head & mask]);
-            cur_head++;
+            ++cur_head;
         }
 
         head.store(cur_head, std::memory_order_release);
@@ -90,6 +90,10 @@ public:
 
     bool full() {
         return tail.load(std::memory_order_acquire) - head.load(std::memory_order_acquire) == cap;
+    }
+
+    size_t size() {
+        return tail.load(std::memory_order_acquire) - head.load(std::memory_order_acquire);
     }
 };
 

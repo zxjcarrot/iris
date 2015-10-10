@@ -28,15 +28,16 @@ file_writer::~file_writer() {
 }
 
 void file_writer::write(const char * buffer, size_t len) {
-    size_t written = 0;
-    while (written < len) {
-        ssize_t n = ::write(m_fd, buffer + written, len - written);
-        if (n <= 0) {
+    size_t offset = 0;
+    while (len) {
+        size_t written = ::write(m_fd, buffer + offset, len);
+        if (written <= 0) {
             if (errno == EINTR)
                 continue;
-            fprintf(stderr, "[iris] error, should write %lu byts, only %lu bytes written, reason: %s.\n", len, n, strerror(errno));
+            fprintf(stderr, "[iris] error, should write %lu byts, only %lu bytes written, reason: %s.\n", len, written, strerror(errno));
             break;
-        }
-        written += n;
-    }
+        }   
+        len -= written;
+        offset += written;
+    }   
 }
