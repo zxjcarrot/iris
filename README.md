@@ -7,7 +7,6 @@ Under the hood, `iris` uses a background thread (logging thread) to offload logg
 2. The logging thread periodically scans through all these queues to collect messages, formats them and writes them into log file.  
 
 A few highlights of the design of `iris` to achieve low latency:
-
 1. Buffering messages with thread local lockfree queue.
 2. Memory is managed by a thread local ringbuffer taking the advantage that logging is FIFO. Because the fact that logging is FIFO. This scales well in multithreaded environment. 
 3. Minimum context switches.
@@ -15,7 +14,6 @@ A few highlights of the design of `iris` to achieve low latency:
 # Usage
 The supported severity levels are:
 ```c++
-
 enum severity_level {
     TRACE,
     DEBUG,
@@ -72,3 +70,13 @@ int main (int argc, char const *argv[]) {
     return 0;
 }
 ```
+
+# Building & Installation
+
+To build the library, simply clone the projet, go inside the `iris` direcotry and  run following commands.
+```shell
+make
+make test
+make install
+```
+To integrate `iris` into your program, link with `-liris` options.

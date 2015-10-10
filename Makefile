@@ -65,4 +65,8 @@ clean:
 	rm -rf *.o
 	rm -rf $(PROGRAM) test_lfringbuffer
 
+install:
+	mkdir -p /usr/local/include/iris
+	cp include/* /usr/local/include/iris
+	cp $(PROGRAM) /usr/local/lib
 .PHONY: clean test
