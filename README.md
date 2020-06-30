@@ -8,7 +8,7 @@ Under the hood, `iris` uses a background thread (logging thread) to offload logg
 
 A few highlights of the design of `iris` to achieve low latency:
 1. Buffering messages with thread local lockfree queue.
-2. Memory is managed by a thread local ringbuffer taking the advantage that logging is FIFO. Because the fact that logging is FIFO. This scales well in multithreaded environment. 
+2. Memory is managed by a thread local ringbuffer taking the advantage of the fact that logging is FIFO. This scales well in multithreaded environment. 
 3. Minimum context switches.
 
 # Usage
